@@ -59,8 +59,7 @@
             (catch Exception e (println (.getMessage e)))))))))
 
 (defn -main [& args]
-  (let [[dir _] args
-        subs (str/join "/" [dir "podcasts.txt"])]
+  (let [[dir subs _] args]
     (with-open [rdr (io/reader subs)]
       (doseq [rss-url (remove #(str/blank? %) (line-seq rdr))]
         (let [pcast (zip-url rss-url)

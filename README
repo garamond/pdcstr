@@ -1,13 +1,9 @@
 # pdcstr
 
-FIXME: write description
+pdcstr is a simple podcast download tool
 
 ## Usage
 
-FIXME: write
+    lein jar
+    java -jar pdcstr.jar /path/to/folder /path/to/configuration.txt 
 
-## License
-
-Copyright (C) 2012 FIXME
-
-Distributed under the Eclipse Public License, the same as Clojure.

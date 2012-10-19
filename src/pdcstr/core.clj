@@ -49,18 +49,20 @@
           out-file (File. (str/join "/" [out-dir title file-name]))
           state-token (str/join "/" [out-dir title ".old-episodes.txt"])
           old-episodes (try (deserialize state-token) (catch Exception e #{}))]
+      ;(println "  loaded old episodes" (str old-episodes))
       (if (or (some #{(.getName out-file)} old-episodes) (.exists out-file))
-        () ;(println "  skipping" file-name)
+        (println "  skipped" file-name)
         (do
-          (println "  downloading" file-name)
           (try
             (download-binary out-file enc)
+            (println "  downloaded" file-name)
             (serialize (conj old-episodes (.getName out-file)) state-token)
             (catch Exception e (println (.getMessage e)))))))))
 
 (defn -main [& args]
   (let [[dir subs _] args]
     (with-open [rdr (io/reader subs)]
+      (println "using subscription list" subs)
       (doseq [rss-url (remove #(str/blank? %) (line-seq rdr))]
         (let [pcast (zip-url rss-url)
               out-dir (File. dir)

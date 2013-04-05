@@ -3,70 +3,55 @@
             [clojure.string :as str]
             [clojure.xml :as xml]
             [clojure.zip :as zip]
-            [clj-http.client :as client])
-  (:use [clojure.data.zip.xml])
-  (:import [java.io BufferedWriter ByteArrayOutputStream File FileOutputStream FileReader FileWriter InputStream PushbackReader])
-  (:gen-class))
+            [clj-http.client :as client]
+            [clojure.edn :as edn]
+            [clojure.data.zip.xml :as zxml])
+  (:import [java.io BufferedWriter ByteArrayOutputStream File FileOutputStream FileReader FileWriter InputStream PushbackReader]))
 
-(defmulti to-byte-array type)
-
-(defmethod to-byte-array InputStream [#^InputStream x]
+(defn to-byte-array [^InputStream x]
   (let [buffer (ByteArrayOutputStream.)]
     (io/copy x buffer)
     (.toByteArray buffer)))
 
-(defn serialize
-  [data-structure ^String filename]
-  (with-open [out-stream (BufferedWriter. (FileWriter. filename))]
-    (binding [*out* out-stream
-              *print-dup* true]
-      (prn data-structure))))
-
-(defn deserialize [^String filename]
-  (with-open [r (PushbackReader. (FileReader. filename))]
-    (read r)))
-
-(defn download-binary [to from]
+(defn download-binary [^File to from]
   (with-open [out (FileOutputStream. to)]
     (.write out
             (to-byte-array
              (io/input-stream
               (io/as-url from))))))
 
-(defn zip-url [url]
+(defn zip-feed [url]
   (zip/xml-zip (xml/parse url)))
 
-(defn get-title [pcast]
-  (str/replace (first (:content (zip/node (xml1-> pcast :channel :title)))) #"[^A-Za-z0-9]" ""))
+(defn list-files [feed-url]
+  (zxml/xml-> (zip-feed feed-url) :channel :item :enclosure (zxml/attr :url)))
 
-(defn get-enclosures [pcast]
-  (xml-> pcast :channel :item :enclosure (attr :url)))
+(defn download-files [feed-url out-dir latest-only?]
+  (let [files (list-files feed-url)]
+    (doseq [f (if latest-only? (vector (first files)) files)]
+      (let [file-name (.getName (io/as-file f))
+            out-file (File. out-dir file-name)
+            state-token (str/join "/" [out-dir ".episodes.edn"])
+            old-episodes (try (edn/read-string (slurp state-token)) (catch Exception e #{}))]
+        ;(println "  loaded old episodes" (str old-episodes))
+        (if (or (some #{(.getName out-file)} old-episodes) (.exists out-file))
+          ();(println "  skipped" file-name)
+          (do
+            (try
+              (.mkdirs out-dir)
+              (println "  downloading" file-name)
+              (download-binary out-file f)
+              (spit state-token (conj old-episodes (.getName out-file))))))))))
 
-(defn download-enclosures [pcast out-dir]
-  (doseq [enc (get-enclosures pcast)]
-    (let [file-name (.getName (io/as-file enc))
-          title (get-title pcast)
-          out-file (File. (str/join "/" [out-dir title file-name]))
-          state-token (str/join "/" [out-dir title ".old-episodes.txt"])
-          old-episodes (try (deserialize state-token) (catch Exception e #{}))]
-      ;(println "  loaded old episodes" (str old-episodes))
-      (if (or (some #{(.getName out-file)} old-episodes) (.exists out-file))
-        (println "  skipped" file-name)
-        (do
-          (try
-            (download-binary out-file enc)
-            (println "  downloaded" file-name)
-            (serialize (conj old-episodes (.getName out-file)) state-token)
-            (catch Exception e (println (.getMessage e)))))))))
+(defn process-feed [feed-url out-dir latest-only?]
+  (let [out-dir (io/file out-dir)]
+    (println "processing" feed-url)
+    (download-files feed-url out-dir latest-only?)))
 
 (defn -main [& args]
-  (let [[dir subs _] args]
-    (with-open [rdr (io/reader subs)]
-      (println "using subscription list" subs)
-      (doseq [rss-url (remove #(str/blank? %) (line-seq rdr))]
-        (let [pcast (zip-url rss-url)
-              out-dir (File. dir)
-              title (get-title pcast)]
-          (.mkdir (File. dir title))
-          (println "processing" title)
-          (download-enclosures pcast out-dir))))))
+  (let [[cfg dir _] args]
+    ;(println "using subscription list" cfg)
+    (let [config (edn/read-string (slurp cfg))]
+      (doseq [feed (:feeds config)]
+        (let [{feed-name :name feed-url :url latest-only? :latest-only?} (merge (:defaults config) feed)]
+          (process-feed feed-url (str/join "/" [dir feed-name]) latest-only?))))))

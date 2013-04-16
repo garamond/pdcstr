@@ -3,18 +3,16 @@
             [clojure.string :as str]
             [clojure.xml :as xml]
             [clojure.zip :as zip]
-            [clj-http.client :as client]
             [clojure.edn :as edn]
-            [clojure.data.zip.xml :as zxml])
-  (:import [java.io BufferedWriter ByteArrayOutputStream File FileOutputStream FileReader FileWriter InputStream PushbackReader]))
+            [clojure.data.zip.xml :as zxml]))
 
-(defn to-byte-array [^InputStream x]
-  (let [buffer (ByteArrayOutputStream.)]
+(defn to-byte-array [^java.io.InputStream x]
+  (let [buffer (java.io.ByteArrayOutputStream.)]
     (io/copy x buffer)
     (.toByteArray buffer)))
 
-(defn download-binary [^File to from]
-  (with-open [out (FileOutputStream. to)]
+(defn download-binary [^java.io.File to from]
+  (with-open [out (java.io.FileOutputStream. to)]
     (.write out
             (to-byte-array
              (io/input-stream
@@ -26,32 +24,28 @@
 (defn list-files [feed-url]
   (zxml/xml-> (zip-feed feed-url) :channel :item :enclosure (zxml/attr :url)))
 
-(defn download-files [feed-url out-dir latest-only?]
-  (let [files (list-files feed-url)]
-    (doseq [f (if latest-only? (vector (first files)) files)]
-      (let [file-name (.getName (io/as-file f))
-            out-file (File. out-dir file-name)
-            state-token (str/join "/" [out-dir ".episodes.edn"])
-            old-episodes (try (edn/read-string (slurp state-token)) (catch Exception e #{}))]
-        ;(println "  loaded old episodes" (str old-episodes))
-        (if (or (some #{(.getName out-file)} old-episodes) (.exists out-file))
-          ();(println "  skipped" file-name)
-          (do
-            (try
-              (.mkdirs out-dir)
-              (println "  downloading" file-name)
-              (download-binary out-file f)
-              (spit state-token (conj old-episodes (.getName out-file))))))))))
+(defn download-files [feed-url out-dir max-files]
+  (doseq [f (take (or max-files Integer/MAX_VALUE) (list-files feed-url))]
+    (let [file-name (.getName (io/as-file f))
+          out-file (io/file out-dir file-name)
+          state-token (io/file out-dir ".episodes.edn")
+          old-episodes (try (edn/read-string (slurp state-token)) (catch Exception e #{}))]
+      ;(println "  loaded old episodes" (str old-episodes))
+      (when-not (or (some #{(.getName out-file)} old-episodes) (.exists out-file))
+        (do
+          (.mkdirs out-dir)
+          (println "  downloading" file-name)
+          (download-binary out-file f)
+          (spit state-token (conj old-episodes (.getName out-file))))))))
 
-(defn process-feed [feed-url out-dir latest-only?]
-  (let [out-dir (io/file out-dir)]
-    (println "processing" feed-url)
-    (download-files feed-url out-dir latest-only?)))
+(defn process-feed [feed-name feed-url out-dir max-files]
+  (let [out-dir (io/file out-dir feed-name)]
+    (println "processing" feed-name)
+    (download-files feed-url out-dir max-files)))
 
 (defn -main [& args]
   (let [[cfg dir _] args]
     ;(println "using subscription list" cfg)
-    (let [config (edn/read-string (slurp cfg))]
-      (doseq [feed (:feeds config)]
-        (let [{feed-name :name feed-url :url latest-only? :latest-only?} (merge (:defaults config) feed)]
-          (process-feed feed-url (str/join "/" [dir feed-name]) latest-only?))))))
+    (doseq [feed (edn/read-string (slurp cfg))]
+      (let [{feed-name :name feed-url :url max-files :max-files} feed]
+        (process-feed feed-name feed-url dir max-files)))))

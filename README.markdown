@@ -9,16 +9,11 @@ pdcstr is a simple podcast download tool
 
 ## Sample configuration
 
-    {
-     :feeds [{:name "Science_Friday"
-              :url "http://www.sciencefriday.com/audio/scifriaudio.xml"}
-             {:name "Wait_Wait_Dont_Tell_Me"
-              :url "http://www.npr.org/rss/podcast.php?id=35"
-              :latest-only? true}
-             {:name "NPR_All_Songs_Considered"
-              :url "http://www.npr.org/rss/podcast.php?id=510019"}
-             {:name "This_American_Life"
-              :url "http://feeds.thisamericanlife.org/talpodcast"
-              :latest-only? true}]
-      :defaults {:latest-only? false}
-    }
+    [{:name "Wait Wait Dont Tell Me"
+      :url "http://www.npr.org/rss/podcast.php?id=35"
+      :max-files 1}
+     {:name "This American Life"
+      :url "http://feeds.thisamericanlife.org/talpodcast"}
+     {:name "The Talk Show"
+      :url "http://feeds.feedburner.com/the_talk_show"
+      :max-files 1}]
